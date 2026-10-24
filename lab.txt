@@ -1,0 +1,102 @@
+import tensorflow as tf
+import tensorflow_hub as hub
+import tensorflow_text as text # Required for BERT text preprocessing
+import os
+import numpy as np
+
+print("TensorFlow Version:", tf.__version__)
+print("TensorFlow Hub Version:", hub.__version__)
+
+# Define the BERT model handles from TensorFlow Hub
+# These URLs point to the preprocessor and the BERT encoder.
+# We'll use a common 'small_bert/bert_en_uncased_L-4_H-512_A-8' for quicker local demonstration.
+# For a larger model, you might use 'bert_en_uncased_L-12_H-768_A-12'.
+tfhub_handle_encoder = '[https://tfhub.dev/tensorflow/small_bert/bert_en_uncased_L-4_H-512_A-8/1](https://tfhub.dev/tensorflow/small_bert/bert_en_uncased_L-4_H-512_A-8/1)'
+tfhub_handle_preprocess = '[https://tfhub.dev/tensorflow/bert_en_uncased_L-4_H-512_A-8/1](https://tfhub.dev/tensorflow/bert_en_uncased_L-4_H-512_A-8/1)' # This is typically a separate preprocessor
+
+
+# --- #TODO: Add a hub.KerasLayer for BERT text preprocessing. ---
+print("Setting up BERT text preprocessor...")
+bert_preprocess_model = hub.KerasLayer(tfhub_handle_preprocess, name='text_preprocessing')
+print("BERT text preprocessor loaded.")
+
+
+# --- #TODO: Add a hub.KerasLayer for BERT text encoding. ---
+print("Setting up BERT encoder...")
+bert_encoder = hub.KerasLayer(tfhub_handle_encoder, name='bert_encoder')
+print("BERT encoder loaded.")
+
+
+# --- Build and Compile the TensorFlow BERT Sentiment Classifier ---
+print("Building the sentiment classification model...")
+text_input = tf.keras.layers.Input(shape=(), dtype=tf.string, name='text_input')
+
+# Preprocess the text input
+preprocessed_text = bert_preprocess_model(text_input)
+
+# Encode the preprocessed text using the BERT encoder
+outputs = bert_encoder(preprocessed_text)
+
+# The 'pooled_output' represents the entire input sequence embedding,
+# suitable for classification tasks.
+pooled_output = outputs['pooled_output']
+
+# Add a simple classification layer on top of the BERT output
+# Assuming binary sentiment (e.g., positive/negative), using sigmoid activation.
+classifier_output = tf.keras.layers.Dense(1, activation='sigmoid', name='classifier_output')(pooled_output)
+
+# Create the final Keras model
+model = tf.keras.Model(inputs=[text_input], outputs=[classifier_output])
+
+# Compile the model
+# Using Adam optimizer and binary cross-entropy loss for binary classification
+model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=3e-5),
+              loss=tf.keras.losses.BinaryCrossentropy(),
+              metrics=['accuracy'])
+
+print("Model summary:")
+model.summary()
+
+# --- Prepare Dummy Data for Local Training ---
+# In a real scenario, this would be loaded from your prepared dataset (e.g., from CSV, TFRecord)
+print("Preparing dummy data for local training demonstration...")
+dummy_train_texts = np.array([
+    "This movie was fantastic and I absolutely loved it!",
+    "I hated every single moment of this terrible film.",
+    "It was an okay experience, nothing special.",
+    "Highly recommended, a truly enjoyable watch.",
+    "Worst time ever, completely boring and pointless.",
+    "The acting was superb, really impressed.",
+    "Mediocre plot, but the visuals were decent.",
+    "A masterpiece, I can't wait to see it again.",
+    "Total waste of money and time, avoid at all costs.",
+    "Pretty good, exceeded my expectations."
+])
+dummy_train_labels = np.array([1, 0, 0, 1, 0, 1, 0, 1, 0, 1]) # 1 for positive, 0 for negative
+
+# --- Train the model locally ---
+print("Training the model locally (this may take a few minutes)...")
+history = model.fit(dummy_train_texts, dummy_train_labels, epochs=5, verbose=1)
+
+print("\nLocal training complete.")
+print(f"Final training accuracy: {history.history['accuracy'][-1]:.4f}")
+
+
+# --- #TODO: Save your BERT sentiment classifier locally. ---
+# Define the local directory to save the model
+LOCAL_MODEL_SAVE_DIR = './bert-sentiment-classifier-local'
+
+# Create the directory if it doesn't exist
+if not os.path.exists(LOCAL_MODEL_SAVE_DIR):
+    os.makedirs(LOCAL_MODEL_SAVE_DIR)
+
+# Save the trained model locally in TensorFlow SavedModel format
+print(f"Saving the model locally to: {LOCAL_MODEL_SAVE_DIR}...")
+tf.saved_model.save(model, LOCAL_MODEL_SAVE_DIR)
+print("Model saved locally.")
+
+# You can verify the saved model by listing its contents
+print(f"\nContents of {LOCAL_MODEL_SAVE_DIR}:")
+!ls -l {LOCAL_MODEL_SAVE_DIR}
+!ls -l {LOCAL_MODEL_SAVE_DIR}/assets
+!ls -l {LOCAL_MODEL_SAVE_DIR}/variables
